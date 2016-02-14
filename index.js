@@ -1,11 +1,9 @@
-var path = require('path');
-var api = require('./api')
-var fs = require('fs');
-var types = require("../api").homebridge.hapLegacyTypes;
-var request = require("request");
+var types;
+var request = require("../npm/node_modules/request");
 
 module.exports = function(homebridge) {
 
+  types = homebridge.hapLegacyTypes;
   homebridge.registerAccessory("homebridge-httpmulti", "HttpMulti", HttpMulti); 
   console.log("Loading HttpMulti accessory");
 }
