@@ -1,5 +1,6 @@
 var types;
-var request = require("../npm/node_modules/request");
+var request = require("request");
+//var request = require("../npm/node_modules/request");
 
 module.exports = function(homebridge) {
 
@@ -69,7 +70,7 @@ HttpMulti.prototype = {
 		var myURL = powerOn ? this.lock_url : this.unlock_url ;
 		
     } else if (this.deviceType.toUpperCase() == "SWITCH" ||
-    			this.deviceType.toUpperCase() == "LIGHTBULB" ||
+    			this.deviceType.toUpperCase() == "LIGHT" ||
     			this.deviceType.toUpperCase() == "FAN" ||
     			this.deviceType.toUpperCase() == "THERMOSTAT" ) {
     	var myURL = powerOn ? this.on_url : this.off_url ;
