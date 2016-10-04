@@ -1,6 +1,6 @@
-//var types;
+//thanks to zwerch (https://github.com/zwerch) for the blinds model as the basis for this accessory
+
 var request = require("request");
-//var request = require("../npm/node_modules/request");
 var Service, Characteristic;
 
 
@@ -136,35 +136,37 @@ function HttpMulti(log, config) {
         .on('set', this.setCurrentState.bind(this));
 
 
-//x    } else if (this.deviceType.toUpperCase() == "GARAGEDOOR") {
+    } else if (this.deviceType.toUpperCase() == "GARAGEDOOR") {
+  	this.log("HttpMulti Garage door Object Initializing...");
 
  	    // state vars
-//x    this.lastPosition = 0; /
-//x    this.currentPositionState = 2; 
-//x    this.currentTargetPosition = 0; 
+    this.lastPosition = 0; 
+    this.currentPositionState = 0; 
+    this.currentTargetPosition = 0; 
 
     // register the service and provide the functions
-//x    this.service = new Service.GarageDoorOpener(this.name);
+    this.service = new Service.GarageDoorOpener(this.name);
 
     // the current position (0-100%)
     // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L493
-//x    this.service
-//x        .getCharacteristic(Characteristic.CurrentDoorState)
-//x        .on('get', this.getCurrentPosition.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.CurrentDoorState)
+        .on('get', this.getCurrentPosition.bind(this));
+
+    // the target position (0-100%)
+    // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1564
+    this.service
+        .getCharacteristic(Characteristic.TargetDoorState)
+        .on('get', this.getTargetPosition.bind(this))
+        .on('set', this.setTargetPosition.bind(this));
 
     // the position state
     // 0 = DECREASING; 1 = INCREASING; 2 = STOPPED;
     // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1138
-//x    this.service
-//x        .getCharacteristic(Characteristic.ObstructionDetected)
-//x        .on('get', this.getPositionState.bind(this));
+    this.service
+        .getCharacteristic(Characteristic.ObstructionDetected)
+        .on('get', this.getPositionState.bind(this));
 
-    // the target position (0-100%)
-    // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1564
-//x    this.service
-//x        .getCharacteristic(Characteristic.TargetDoorState)
-//x        .on('get', this.getTargetPosition.bind(this))
-//x        .on('set', this.setTargetPosition.bind(this));
 
     } else if (this.deviceType.toUpperCase() == "LOCK") {
   	this.log("HttpMulti Lock Object Initializing...");
@@ -178,7 +180,7 @@ function HttpMulti(log, config) {
 
     this.service
         .getCharacteristic(Characteristic.LockCurrentState)
-        .on('get', this.getCurrentState.bind(this))
+        .on('get', this.getCurrentState.bind(this));
 
     this.service
         .getCharacteristic(Characteristic.LockTargetState)
@@ -186,6 +188,35 @@ function HttpMulti(log, config) {
         .on('set', this.setCurrentLockState.bind(this));
 
     } else if (this.deviceType.toUpperCase() == "THERMOSTAT") {
+
+     	this.lastState = 0; 
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+
+   this.service = new Service.Thermostat(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+        .on('get', this.getCurrentState.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.TargetHeatingCoolingState)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .on('get', this.getCurrentState.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.TargetTemperature)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+
+   this.service
+        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        .on('get', this.getCurrentState.bind(this))
 
    
 	} else {
@@ -199,6 +230,23 @@ HttpMulti.prototype.getCurrentPosition = function(callback) {
     callback(null, this.lastPosition);
 }
 
+HttpMulti.prototype.getCurrentState = function(callback) {
+    this.log("Requested CurrentState: %s", this.lastState);
+    if (this.status_url !== undefined) {
+    	this.httpRequest((this.status_url), this.httpMethod, function(error,response,data) {
+    		if (error)	{
+        		this.log("Error reading status: %s", error.message);
+        	} else {
+        		this.log("Data returned is: %s", data);
+       		}
+    	});
+    }
+
+    callback(null, this.lastState);
+
+    
+}
+
 HttpMulti.prototype.getPositionState = function(callback) {
     this.log("Requested PositionState: %s", this.currentPositionState);
     callback(null, this.currentPositionState);
@@ -208,6 +256,7 @@ HttpMulti.prototype.getTargetPosition = function(callback) {
     this.log("Requested TargetPosition: %s", this.currentTargetPosition);
     callback(null, this.currentTargetPosition);
 }
+
 
 HttpMulti.prototype.setTargetPosition = function(pos, callback) {
     this.log("Set TargetPosition: %s", pos);
@@ -228,11 +277,6 @@ HttpMulti.prototype.setTargetPosition = function(pos, callback) {
 
         callback(null);
     }.bind(this));
-}
-
-HttpMulti.prototype.getCurrentState = function(callback) {
-    this.log("Requested CurrentState: %s", this.lastState);
-    callback(null, this.lastState);
 }
 
 HttpMulti.prototype.setCurrentState = function(value, callback) {
