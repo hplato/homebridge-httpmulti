@@ -1,20 +1,16 @@
-var types;
+//thanks to zwerch (https://github.com/zwerch) for the blinds model as the basis for this accessory
+
 var request = require("request");
-//var request = require("../npm/node_modules/request");
+var Service, Characteristic;
+
 
 module.exports = function(homebridge) {
-
-  types = homebridge.hapLegacyTypes;
+  Service = homebridge.hap.Service;
+  Characteristic = homebridge.hap.Characteristic;
   homebridge.registerAccessory("homebridge-httpmulti", "HttpMulti", HttpMulti); 
   console.log("Loading HttpMulti accessory");
 }
 
-// HTTP Multiple object. Used for simple integration into backends such as Misterhouse
-// TODO
-// - how to query status of objects and feed that back to homebridge
-
-//Fan
-// Set the fan to [on,off,low,medium,high]
 
 function HttpMulti(log, config) {
   this.log = log;
@@ -29,13 +25,16 @@ function HttpMulti(log, config) {
   this.brightness_url = config["brightness_url"];
   if (this.brightness_url === undefined) this.brightness_url = config["speed_url"];
   if (this.brightness_url === undefined) this.brightness_url = config["setpoint_url"];
-  this.setpoint_url = config["setpoint_url"];
   this.gettemp_url = config["gettemp_url"];
+  this.unit_type = "C";
+  if (config["tempunits"] !== undefined) this.units = config["tempunits"]; 
   this.status_url = config["status_url"];
   this.name = config["name"];
   this.deviceType = config["deviceType"];
   this.method = config["http_method"];
   if (this.method === undefined) this.method = "GET";
+  
+//TODO add this to ServiceInformation  
   this.serviceName = config["serviceName"];
   if (this.serviceName === undefined) this.serviceName = this.name;
   this.manufacturer = config["accessory"];
@@ -51,545 +50,328 @@ function HttpMulti(log, config) {
     }
   	this.serialNum = "X"+Math.abs(hash);
   }
+  
+  if (this.deviceType.toUpperCase() == "BLIND") {
+  	this.log("HttpMulti Blind Object Initializing...");
+  	    // state vars
+    this.lastPosition = 0; // last known position of the blinds, down by default
+    this.currentPositionState = 2; // stopped by default
+    this.currentTargetPosition = 0; // down by default
+
+    // register the service and provide the functions
+    this.service = new Service.WindowCovering(this.name);
+
+    // the current position (0-100%)
+    // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L493
+    this.service
+        .getCharacteristic(Characteristic.CurrentPosition)
+        .on('get', this.getCurrentPosition.bind(this));
+
+    // the position state
+    // 0 = DECREASING; 1 = INCREASING; 2 = STOPPED;
+    // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1138
+    this.service
+        .getCharacteristic(Characteristic.PositionState)
+        .on('get', this.getPositionState.bind(this));
+
+    // the target position (0-100%)
+    // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1564
+    this.service
+        .getCharacteristic(Characteristic.TargetPosition)
+        .on('get', this.getTargetPosition.bind(this))
+        .on('set', this.setTargetPosition.bind(this));
+        
+        
+    } else if (this.deviceType.toUpperCase() == "LIGHT") {
+  		this.log("HttpMulti Light Object Initializing...");
+    
+     	this.lastState = 0; 
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+    	this.lastUpdate = Date.now();
+
+    // register the service and provide the functions
+    this.service = new Service.Lightbulb(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.On)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+    this.service
+        .getCharacteristic(Characteristic.Brightness)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentStatePartial.bind(this));
+
+    } else if (this.deviceType.toUpperCase() == "FAN") {
+  		this.log("HttpMulti Fan Object Initializing...");
+
+     	this.lastState = 0; 
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+
+    // register the service and provide the functions
+    this.service = new Service.Fan(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.On)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+    this.service
+        .getCharacteristic(Characteristic.RotationSpeed)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentStatePartial.bind(this));
+
+
+    } else if (this.deviceType.toUpperCase() == "SWITCH") {
+  	this.log("HttpMulti Switch Object Initializing...");
+
+     	this.lastState = 0; 
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+
+    // register the service and provide the functions
+    this.service = new Service.Switch(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.On)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+
+    } else if (this.deviceType.toUpperCase() == "GARAGEDOOR") {
+  	this.log("HttpMulti Garage door Object Initializing...");
+
+ 	    // state vars
+    this.lastPosition = 0; 
+    this.currentPositionState = 0; 
+    this.currentTargetPosition = 0; 
+    this.lastObstructed = false;
+
+    // register the service and provide the functions
+    this.service = new Service.GarageDoorOpener(this.name);
+
+   this.service
+        .getCharacteristic(Characteristic.CurrentDoorState)
+        .on('get', this.getCurrentPosition.bind(this))
+        
+
+    this.service
+        .getCharacteristic(Characteristic.TargetDoorState)
+        .on('get', this.getTargetPosition.bind(this))
+        .on('set', this.setTargetPosition.bind(this));
+
+    this.service
+        .getCharacteristic(Characteristic.ObstructionDetected)
+        .on('get', this.getObstructed.bind(this));
+
+
+    } else if (this.deviceType.toUpperCase() == "LOCK") {
+  	this.log("HttpMulti Lock Object Initializing...");
+
+     	this.lastState = 0; 
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+
+    // register the service and provide the functions
+    this.service = new Service.LockMechanism(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.LockCurrentState)
+        .on('get', this.getCurrentState.bind(this));
+
+    this.service
+        .getCharacteristic(Characteristic.LockTargetState)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentLockState.bind(this));
+
+    } else if (this.deviceType.toUpperCase() == "THERMOSTAT") {
+
+     	this.lastState = 0; // 0 OFF, 1 HEAT, 2 COOL
+    	this.currentState = 0;  
+    	this.TargetState = 0;
+     	this.lastTemp = 15;
+     	this.currentTemp = 15;
+     	this.TargetTemp = 15;
+     	this.units = 0; // 0 Celcius, 1 Fahrenheit 
+     	if (this.unit_type !== "C") this.units = 1;
+
+   this.service = new Service.Thermostat(this.name);
+
+    this.service
+        .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+        .on('get', this.getCurrentState.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.TargetHeatingCoolingState)
+        .on('get', this.getCurrentState.bind(this))
+        .on('set', this.setCurrentState.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .on('get', this.getCurrentTemp.bind(this));
+
+   this.service
+        .getCharacteristic(Characteristic.TargetTemperature)
+        .on('get', this.getCurrentTemp.bind(this))
+        .on('set', this.setCurrentStatePartial.bind(this));
+
+
+   this.service
+        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        .on('get', this.getCurrentUnits.bind(this))
+
+   
+	} else {
+		this.log("Unknown device type "+this.deviceType);
+	}
   this.log("HttpMulti Initialization complete for "+this.deviceType+":"+this.name+":"+this.serialNum);
 }
 
+HttpMulti.prototype.getObstructed = function(callback) {
+    this.log("Requested Obstructed: %s", this.lastObstructed);
+    callback(null, this.lastObstructed);
+}
 
-HttpMulti.prototype = {
+HttpMulti.prototype.getCurrentPosition = function(callback) {
+    this.log("Requested CurrentPosition: %s", this.lastPosition);
+    callback(null, this.lastPosition);
+}
 
-  setPowerState: function(powerOn) {
+HttpMulti.prototype.getCurrentState = function(callback) {
+    this.log("Requested CurrentState: %s", this.lastState);
+    if (this.status_url2 !== undefined) {
+    	this.log("Status_URL: %s", this.status_url);
+    	this.httpRequest(this.status_url, this.httpMethod, function(error,response,data) {
+    		if (error)	{
+        		this.log("Error reading status: %s", error.message);
+        	} else {
+        		this.log("Data returned is: %s", data);
+       		}
+    	});
+    }
 
-    var that = this;
-    if (this.deviceType.toUpperCase() == "BLIND") {
-    	var myURL = powerOn ? this.up_url : this.down_url ;
-    	
-	} else if (this.deviceType.toUpperCase() == "GARAGEDOOR") {
-		var myURL = powerOn ? this.close_url : this.open_url ;  
-		  	
-	} else if (this.deviceType.toUpperCase() == "LOCK") {
-		var myURL = powerOn ? this.lock_url : this.unlock_url ;
-		
-    } else if (this.deviceType.toUpperCase() == "SWITCH" ||
-    			this.deviceType.toUpperCase() == "LIGHT" ||
-    			this.deviceType.toUpperCase() == "FAN" ||
-    			this.deviceType.toUpperCase() == "THERMOSTAT" ) {
-    	var myURL = powerOn ? this.on_url : this.off_url ;
+    callback(null, this.lastState);
+    
+}
+
+HttpMulti.prototype.getCurrentUnits = function(callback) {
+    this.log("Requested CurrentPosition: %s", this.lastPosition);
+    callback(null, this.units);
+}
+
+HttpMulti.prototype.getCurrentTemp = function(callback) {
+    this.log("Requested CurrentPosition: %s", this.lastPosition);
+    callback(null, this.lastTemp);
+}
+
+HttpMulti.prototype.getPositionState = function(callback) {
+    this.log("Requested PositionState: %s", this.currentPositionState);
+    callback(null, this.currentPositionState);
+}
+
+HttpMulti.prototype.getTargetPosition = function(callback) {
+    this.log("Requested TargetPosition: %s", this.currentTargetPosition);
+    callback(null, this.currentTargetPosition);
+}
+
+
+HttpMulti.prototype.setTargetPosition = function(pos, callback) {
+    this.log("Set TargetPosition: %s", pos);
+    this.currentTargetPosition = pos;
+    const moveUp = (this.currentTargetPosition >= this.lastPosition);
+    this.log((moveUp ? "Moving up" : "Moving down"));
+
+    this.service
+        .setCharacteristic(Characteristic.PositionState, (moveUp ? 1 : 0));
+	this.log("up="+this.up_url+" down="+this.down_url+" method="+this.httpMethod);
+    this.httpRequest((moveUp ? this.up_url : this.down_url), this.httpMethod, function() {
+        this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"))
+        this.service
+            .setCharacteristic(Characteristic.CurrentPosition, (moveUp ? 100 : 0));
+        this.service
+            .setCharacteristic(Characteristic.PositionState, 2);
+        this.lastPosition = (moveUp ? 100 : 0);
+
+        callback(null);
+    }.bind(this));
+}
+
+HttpMulti.prototype.setCurrentState = function(value, callback) {
+    this.log("Set CurrentState: %s", value);
+    this.currentTargetState = value;
+    this.log((value ? "Turning On" : "Turning Off"));
+	if (value == 1 && this.lastState > 1) {
+		//It's a dim operation, so don't turn the light on
+		this.log("Ignoring on since light is dim?");
+		callback(null);
 	} else {
-		this.log("Unknown device Type "+this.deviceType);
-	}
-
-    this.log("URL = "+myURL);
-    this.log("Setting "+this.deviceType+" state to " + powerOn);
-
-	if (this.method.toUpperCase() == "POST") {
-    	request.post({
-           url: myURL,
-  		 }, function(err, response, body) {
-
-       		if (!err && response.statusCode == 200) {
-         		that.log("State change sent to http module.");
-       		} else {
-        		that.log("Some errors...happened please try again");
-       		}
-     	});
-     } else {
-    	request.get({
-           url: myURL,
-  		 }, function(err, response, body) {
-
-       		if (!err && response.statusCode == 200) {
-         		that.log("State change sent to http module.");
-       		} else {
-        		that.log("Some errors...happened please try again");
-       		}
-     	});
-     }
-
-  },
-
-
-  setBrightnessLevel: function(value) {
-
-    var that = this;
-
-	var myURL = this.brightness_url;
-	if (myURL === undefined) {
-		this.log("Error, brightness/speed/setpoint URL not defined!");
-	} else {
-		// replace %VALUE% with value in the URL
-		myURL = myURL.replace("%VALUE%",value);
-	
-    	this.log(myURL);
-    	this.log("Setting brightness level of "+this.deviceType+" to "+value);
-
-		if (this.method.toUpperCase() == "POST") {
-    		request.post({
-           	url: myURL,
-  		 	}, function(err, response, body) {
-
-       		if (!err && response.statusCode == 200) {
-         		that.log("State change sent to http module.");
-       		} else {
-        		that.log("Some errors...happened please try again");
-       		}
-     		});
-     	} else {
-
-    	request.get({
-       		url: myURL,
-    	}, function(err, response, body) {
-
-       		if (!err && response.statusCode == 200) {
-         		that.log("State change complete.");
-       		}
-       		else {
-         		that.log("Error '"+err+"' setting brightness level: " + body);
-       		}
-     	});
-     }
-	}
-  },
-
-  getServices: function() {
-    var that = this;
-    var services = [{
-      sType: types.ACCESSORY_INFORMATION_STYPE,
-      characteristics: [{
-          cType: types.NAME_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.name,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Name",
-          designedMaxLength: 255
-      },{
-          cType: types.MANUFACTURER_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.manufacturer,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Manufacturer",
-          designedMaxLength: 255
-      },{
-          cType: types.MODEL_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.model,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Model",
-          designedMaxLength: 255
-      },{
-          cType: types.SERIAL_NUMBER_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.serialNum,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Serial Number",
-          designedMaxLength: 255
-      },{
-          cType: types.IDENTIFY_CTYPE,
-          onUpdate: null,
-          perms: ["pw"],
-          format: "bool",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Identify Accessory",
-          designedMaxLength: 1
-      }]
-    }];
-
-    if (this.deviceType.toUpperCase() == "LIGHTBULB" || this.deviceType.toUpperCase() == "LIGHT" )  {
-   	services.push({
-      sType: types.LIGHTBULB_STYPE,
-      characteristics: [{
-          cType: types.NAME_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.serviceName,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Service Name",
-          designedMaxLength: 255
-      },{
-          cType: types.BRIGHTNESS_CTYPE,
-          onUpdate: function(value) {
-            console.log(that.name + "...changing brightness....");
-            that.setBrightnessLevel(value);
-             },
-          perms: ["pw","pr","ev"],
-          format: "bool",
-          initialValue: 100,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Adjust Brightness",
-          designedMinValue: 0,
-          designedMaxValue: 100,
-          designedMinStep: 1,
-          unit: "%"
-      },{      
-          cType: types.POWER_STATE_CTYPE,
-          onUpdate: function(value) {
-            console.log(that.name + "...changing status....");
-            that.setPowerState(value);
-             },
-          perms: ["pw","pr","ev"],
-          format: "bool",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Change the power state of light",
-          designedMaxLength: 1
-      }]
-    });       
+		this.log("on="+this.on_url+" off="+this.off_url+" method="+this.httpMethod);
+    	this.httpRequest((value ? this.on_url : this.off_url), this.httpMethod, function() {
+        	this.log("Success turning %s", (value ? "on" : "off"))
+        	this.lastState = value;
+        	callback(null);
+    	}.bind(this));
     }
-    
-    if (this.deviceType == "fan") {
-      services.push({
-      sType: types.FAN_STYPE,
-      characteristics: [{
-          cType: types.NAME_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.serviceName,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Service Name",
-          designedMaxLength: 255
-      },{
-       		cType: types.ROTATION_SPEED_CTYPE,
-            perms: ["pw","pr","ev"],
-            format: "bool",
-            initialValue: 0,
-            supportEvents: true,
-            supportBonjour: false,
-            manfDescription: "Change the speed of the fan",
-            designedMaxLength: 1,
-            onUpdate: function(value) {
-                console.log(that.name + "...changing speed to "+value+" ....");
-                if (value == 0) {
-                    that.setPowerState(0);
-                } else if (value > 0 && value < 40) {
-                    that.setBrightnessLevel("low");
-                } else if (value > 40 && value < 75) {
-                    that.setBrightnessLevel("med");
-                } else {
-                    that.setBrightnessLevel("high");
-                }
-            }
-      },{
-          cType: types.POWER_STATE_CTYPE,
-          onUpdate: function(value) {
-            console.log(that.name + "...changing status....");
-            that.setPowerState(value);
-             },
-          perms: ["pw","pr","ev"],
-          format: "bool",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Change the power state of fan",
-          designedMaxLength: 1
-      }]
-    });    
-    }
-    
-    if (this.deviceType.toUpperCase() == "SWITCH") {
-   	services.push({
-      sType: types.LIGHTBULB_STYPE,
-      characteristics: [{
-          cType: types.NAME_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.serviceName,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Service Name",
-          designedMaxLength: 255
-      },{     
-          cType: types.POWER_STATE_CTYPE,
-          onUpdate: function(value) {
-            console.log(that.name + "...changing status....");
-            that.setPowerState(value);
-             },
-          perms: ["pw","pr","ev"],
-          format: "bool",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Change the power state of switch",
-          designedMaxLength: 1
-      }]
-    });       
-    }
-    
-    if (this.deviceType.toUpperCase() == "LOCK") {
-     services.push({
-    sType: types.LOCK_MECHANISM_STYPE, 
-    characteristics: [{
-    	cType: types.NAME_CTYPE,
-    	onUpdate: null,
-    	perms: ["pr"],
-		format: "string",
-		initialValue: "Lock Mechanism",
-		supportEvents: false,
-		supportBonjour: false,
-		manfDescription: "Name of service",
-		designedMaxLength: 255   
-    },{
-    	cType: types.CURRENT_LOCK_MECHANISM_STATE_CTYPE,
-    	onUpdate: function(value) {
-            console.log(that.name + "...current status....");
-            that.setPowerState(value);
-             },
-    	perms: ["pr","ev"],
-		format: "int",
-		initialValue: 0,
-		supportEvents: false,
-		supportBonjour: false,
-		manfDescription: "BlaBla",
-		designedMinValue: 0,
-		designedMaxValue: 3,
-		designedMinStep: 1,
-		designedMaxLength: 1    
-    },{
-    	cType: types.TARGET_LOCK_MECHANISM_STATE_CTYPE,
-    	onUpdate: function(value) {
-            console.log(that.name + "...changing status....");
-            that.setPowerState(value);
-             },
-    	perms: ["pr","pw","ev"],
-		format: "int",
-		initialValue: 0,
-		supportEvents: false,
-		supportBonjour: false,
-		manfDescription: "BlaBla",
-		designedMinValue: 0,
-		designedMaxValue: 1,
-		designedMinStep: 1,
-		designedMaxLength: 1    
-      }]
-    });    
-    }    
-    
-    if (this.deviceType == "blind") {
-      services.push({
-      sType: types.WINDOW_COVERING_STYPE,
-      characteristics: [{
-          cType: types.NAME_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "string",
-          initialValue: this.serviceName,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Service Name",
-          designedMaxLength: 255
-      },{
-          cType: types.WINDOW_COVERING_CURRENT_POSITION_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "int",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Window cover current position",
-          designedMinValue: 0,
-          designedMaxValue: 100,
-          unit: "%"
-      },{
-          cType: types.WINDOW_COVERING_TARGET_POSITION_CTYPE,
-          onUpdate: function(value) {
-            console.log(that.name + "...changing status....");
-            that.setPowerState(value);
-             },
-          perms: ["pw","pr","ev"],
-          format: "int",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Window cover target position",
-          designedMinValue: 0,
-          designedMaxValue: 100,
-          designedMinStep: 1,
-          unit: "%"
-      },{
-          cType: types.WINDOW_COVERING_OPERATION_STATE_CTYPE,
-          onUpdate: null,
-          perms: ["pr"],
-          format: "int",
-          initialValue: false,
-          supportEvents: false,
-          supportBonjour: false,
-          manfDescription: "Window cover operation state",
-          designedMinValue: 0,
-          designedMaxValue: 100,
-          unit: "%"
-      }]
-    });     
-    }
-    
-    if (this.deviceType.toUpperCase() == "GARAGEDOOR") {
-      services.push({
-      sType: types.GARAGE_DOOR_OPENER_STYPE,
-      characteristics: [{
-        cType: types.NAME_CTYPE,
-        onUpdate: null,
-        perms: ["pr"],
-        format: "string",
-        initialValue: this.name,
-        supportEvents: false,
-        supportBonjour: false,
-        manfDescription: "Name of service",
-        designedMaxLength: 255
-      },{
- 	cType: types.CURRENT_DOOR_STATE_CTYPE,
-    	onUpdate: function(value) { 
-    		console.log("Garage Door - current door state Change"+value); 
-    	},
-    	onRead: function(callback) {
-    		console.log("Garage Door - current door state Read");
-    		//callback(undefined); // only testing, we have no physical device to read from
-    	},
-    	perms: ["pr","ev"],
-		format: "int",
-		initialValue: 0,
-		supportEvents: false,
-		supportBonjour: false,
-		manfDescription: "BlaBla",
-		designedMinValue: 0,
-		designedMaxValue: 4,
-		designedMinStep: 1,
-		designedMaxLength: 1    
-	},{
-        cType: types.TARGET_DOORSTATE_CTYPE,
-        onUpdate: function(value) { that.setPowerState(value); },
-        perms: ["pw","pr","ev"],
-        format: "int",
-        initialValue: 0,
-        supportEvents: false,
-        supportBonjour: false,
-        manfDescription: "Change the door state",
-		designedMinValue: 0,
-		designedMaxValue: 1,
-		designedMinStep: 1,
-        designedMaxLength: 1
-      },{
-    	cType: types.OBSTRUCTION_DETECTED_CTYPE,
-    	onUpdate: function(value) { 
-    		console.log("Garage Door Obstruction Change:",value); 
-    	},
-    	onRead: function(callback) {
-    		console.log("Garage Door Obstruction Read:");
-    	},
-    	perms: ["pr","ev"],
-		format: "bool",
-		initialValue: false,
-		supportEvents: false,
-		supportBonjour: false,
-		manfDescription: "BlaBla",
-      }]
-    });
-    }
+}
 
-    if (this.deviceType.toUpperCase() == "THERMOSTAT") {
-      services.push({
-    sType: types.THERMOSTAT_STYPE, 
-    characteristics: [{
-      cType: types.NAME_CTYPE,
-      onUpdate: null,
-      perms: ["pr"],
-      format: "string",
-      initialValue: this.name,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Bla",
-      designedMaxLength: 255   
-    },{
-      cType: types.CURRENTHEATINGCOOLING_CTYPE,
-      onUpdate: function(value) { 
-        console.log("Current HC Change:",value); 
-      },
-      perms: ["pr","ev"],
-      format: "int",
-      initialValue: 0,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Current Mode",
-      designedMaxLength: 1,
-      designedMinValue: 0,
-      designedMaxValue: 2,
-      designedMinStep: 1,    
-    },{
-      cType: types.TARGETHEATINGCOOLING_CTYPE,
-      onUpdate: function(value) { 
-        console.log("Target HC Change:",value); 
-      },
-      perms: ["pw","pr","ev"],
-      format: "int",
-      initialValue: 0,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Target Mode",
-      designedMinValue: 0,
-      designedMaxValue: 3,
-      designedMinStep: 1,
-    },{
-      cType: types.CURRENT_TEMPERATURE_CTYPE,
-      onUpdate: function(value) { 
-        console.log("Current Temp Change:",value); 
-      },
-      perms: ["pr","ev"],
-      format: "int",
-      initialValue: 20,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Current Temperature",
-      unit: "celsius"
-    },{
-      cType: types.TARGET_TEMPERATURE_CTYPE,
-      onUpdate: function(value) { 
-        console.log("Target Temp Change:",value); 
-        that.setBrightnessLevel(value);
-      },
-      perms: ["pw","pr","ev"],
-      format: "int",
-      initialValue: 20,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Target Temperature",
-      designedMinValue: 16,
-      designedMaxValue: 38,
-      designedMinStep: 1,
-      unit: "celsius"
-    },{
-      cType: types.TEMPERATURE_UNITS_CTYPE,
-      onUpdate: function(value) { 
-        console.log("Unit Change:",value); 
-      },
-      perms: ["pr","ev"],
-      format: "int",
-      initialValue: 0,
-      supportEvents: false,
-      supportBonjour: false,
-      manfDescription: "Unit"
-      }]
-    });     
+HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
+    this.log("Set Partial State: %s", value);
+    this.currentTargetState = value;
+	if (this.lastUpdate > (Date.now() + 1000)) {
+	    var myURL = this.brightness_url;
+	    if (myURL === undefined) {
+        	this.log("Error, brightness URL not defined!");
+    	} else {
+        	// replace %VALUE% with value in the URL
+        	myURL = myURL.replace("%VALUE%",value);
+  		}      
+		this.log("brightness URL="+myURL);
+    	this.httpRequest(myURL, this.httpMethod, function() {
+        	this.log("Success turning %s", (value))
+        	this.lastState = value;
+        	callback(null);
+    	}.bind(this));
+    	this.lastUpdate = Date.now();
+    } else {
+      this.log("Brightness not changing due to throttle. Last update is: %s", this.lastUpdate);
+  
     }
+}
 
-    return services;
-  }
-};
+HttpMulti.prototype.setCurrentLockState = function(value, callback) {
+    this.log("Set LockState: %s", value);
+    this.currentTargetState = value;
+    this.log((value ? "Locking" : "Unlocking"));
 
-module.exports.accessory = HttpMulti;
+	this.log("lock="+this.lock_url+" unlock="+this.unlock_url+" method="+this.httpMethod);
+    this.httpRequest((value ? this.lock_url : this.unlock_url), this.httpMethod, function() {
+        this.log("Success turning %s", (value ? "lock" : "unlock"))
+        this.lastState = value;
+
+        callback(null);
+    }.bind(this));
+}
+
+
+HttpMulti.prototype.httpRequest = function(url, method, callback) {
+  request({
+    method: method,
+    url: url,
+  }, function(err, response, body) {
+    if (!err && response.statusCode == 200) {
+      callback(null);
+    } else {
+      this.log("Error getting state (status code %s): %s", response.StatusCode, err);
+      callback(err);
+    }
+  }.bind(this));
+}
+
+HttpMulti.prototype.getServices = function() {
+  return [this.service];
+}
+
+
+//module.exports.accessory = HttpMulti;
