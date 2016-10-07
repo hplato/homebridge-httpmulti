@@ -15,6 +15,6 @@
     "homebridge": ">=0.2.5"
   },
   "dependencies": {
-    "request": "2.49.x"
+    "request": "^2.74.0"
   }
 }
