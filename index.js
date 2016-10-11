@@ -26,6 +26,10 @@ function HttpMulti(log, config) {
   if (this.brightness_url === undefined) this.brightness_url = config["speed_url"];
   if (this.brightness_url === undefined) this.brightness_url = config["setpoint_url"];
   this.gettemp_url = config["gettemp_url"];
+  this.mode_off_url = config["mode_off_url"];
+  this.mode_heat_url = config["mode_heat_url"];
+  this.mode_cool_url = config["mode_cool_url"];
+  this.mode_auto_url = config["mode_auto_url"];  
   this.unit_type = "C";
   if (config["tempunits"] !== undefined) this.units = config["tempunits"]; 
   this.status_url = config["status_url"];
@@ -160,7 +164,7 @@ function HttpMulti(log, config) {
     this.service
         .getCharacteristic(Characteristic.TargetDoorState)
         .on('get', this.getTargetPosition.bind(this))
-        .on('set', this.setTargetPosition.bind(this));
+        .on('set', this.setTargetDoorPosition.bind(this));
 
     this.service
         .getCharacteristic(Characteristic.ObstructionDetected)
@@ -206,7 +210,7 @@ function HttpMulti(log, config) {
    this.service
         .getCharacteristic(Characteristic.TargetHeatingCoolingState)
         .on('get', this.getCurrentState.bind(this))
-        .on('set', this.setCurrentState.bind(this));
+        .on('set', this.setCurrentThermoState.bind(this));
 
    this.service
         .getCharacteristic(Characteristic.CurrentTemperature)
@@ -251,7 +255,6 @@ HttpMulti.prototype.getCurrentState = function(callback) {
        		}
     	});
     }
-
     callback(null, this.lastState);
     
 }
@@ -285,6 +288,7 @@ HttpMulti.prototype.setTargetPosition = function(pos, callback) {
 
     this.service
         .setCharacteristic(Characteristic.PositionState, (moveUp ? 1 : 0));
+        
 	this.log("up="+this.up_url+" down="+this.down_url+" method="+this.httpMethod);
     this.httpRequest((moveUp ? this.up_url : this.down_url), this.httpMethod, function() {
         this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"))
@@ -293,7 +297,22 @@ HttpMulti.prototype.setTargetPosition = function(pos, callback) {
         this.service
             .setCharacteristic(Characteristic.PositionState, 2);
         this.lastPosition = (moveUp ? 100 : 0);
+		this.lastState = (moveUp ? 1 : 0 );
+        callback(null);
+    }.bind(this));
+}
 
+HttpMulti.prototype.setTargetDoorPosition = function(pos, callback) {
+    this.log("Set TargetDoorPosition: %s", pos);
+    this.currentTargetPosition = pos;
+    const moveUp = (this.currentTargetPosition >= this.lastPosition);
+    this.log((moveUp ? "Moving up" : "Moving down"));
+        
+	this.log("up="+this.up_url+" down="+this.down_url+" method="+this.httpMethod);
+    this.httpRequest((moveUp ? this.up_url : this.down_url), this.httpMethod, function() {
+        this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"))
+        this.lastPosition = (moveUp ? 100 : 0);
+		this.lastState = (moveUp ? 1 : 0 );
         callback(null);
     }.bind(this));
 }
@@ -316,10 +335,34 @@ HttpMulti.prototype.setCurrentState = function(value, callback) {
     }
 }
 
+HttpMulti.prototype.setCurrentThermoState = function(value, callback) {
+    this.log("Set CurrentState: %s", value);
+    this.currentTargetState = value;
+	var myURL;
+	if (value == 0) {
+		myURL = this.mode_off_url;
+		this.log("0 Off "+myURL);
+	} else if (value == 1) {
+		myURL = this.mode_heat_url;
+		this.log("1 HEAT "+myURL);
+	}else if (value == 2) {
+		myURL = this.mode_cool_url;
+		this.log("2 COOL "+myURL);
+	} else if (value == 3) {
+		myURL = this.mode_auto_url;
+		this.log("3 AUTO "+myURL);
+	}
+    this.httpRequest(myURL, this.httpMethod, function() {
+        this.log("Success turning %s", value)
+        this.lastState = value;
+        	callback(null);
+    	}.bind(this));
+}
+
 HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
     this.log("Set Partial State: %s", value);
     this.currentTargetState = value;
-	if (this.lastUpdate > (Date.now() + 1000)) {
+//	if (this.lastUpdate > (Date.now() + 1000)) {
 	    var myURL = this.brightness_url;
 	    if (myURL === undefined) {
         	this.log("Error, brightness URL not defined!");
@@ -334,10 +377,9 @@ HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
         	callback(null);
     	}.bind(this));
     	this.lastUpdate = Date.now();
-    } else {
-      this.log("Brightness not changing due to throttle. Last update is: %s", this.lastUpdate);
-  
-    }
+//    } else {
+//      this.log("Brightness not changing due to throttle. Last update is: %s", this.lastUpdate);  
+//    }
 }
 
 HttpMulti.prototype.setCurrentLockState = function(value, callback) {
