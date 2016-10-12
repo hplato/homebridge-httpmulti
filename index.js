@@ -294,8 +294,8 @@ HttpMulti.prototype.setTargetPosition = function(pos, callback) {
         this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"))
         this.service
             .setCharacteristic(Characteristic.CurrentPosition, (moveUp ? 100 : 0));
-        this.service
-            .setCharacteristic(Characteristic.PositionState, 2);
+//        this.service
+//            .setCharacteristic(Characteristic.PositionState, 2);
         this.lastPosition = (moveUp ? 100 : 0);
 		this.lastState = (moveUp ? 1 : 0 );
         callback(null);
@@ -310,7 +310,9 @@ HttpMulti.prototype.setTargetDoorPosition = function(pos, callback) {
         
 	this.log("up="+this.up_url+" down="+this.down_url+" method="+this.httpMethod);
     this.httpRequest((moveUp ? this.up_url : this.down_url), this.httpMethod, function() {
-        this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"))
+        this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"));
+        this.service
+        	.setCharacteristic(Characteristic.CurrentDoorState, pos);
         this.lastPosition = (moveUp ? 100 : 0);
 		this.lastState = (moveUp ? 1 : 0 );
         callback(null);
@@ -391,6 +393,10 @@ HttpMulti.prototype.setCurrentLockState = function(value, callback) {
     this.httpRequest((value ? this.lock_url : this.unlock_url), this.httpMethod, function() {
         this.log("Success turning %s", (value ? "lock" : "unlock"))
         this.lastState = value;
+     	var currentState = (value == Characteristic.LockTargetState.SECURED) ?
+        	Characteristic.LockCurrentState.SECURED : Characteristic.LockCurrentState.UNSECURED;
+      
+      	this.service.setCharacteristic(Characteristic.LockCurrentState, currentState);
 
         callback(null);
     }.bind(this));
