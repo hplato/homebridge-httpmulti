@@ -243,29 +243,39 @@ HttpMulti.prototype.getCurrentPosition = function(callback) {
     callback(null, this.lastPosition);
 }
 
+//TODO, use method for http
 HttpMulti.prototype.getCurrentState = function(callback) {
     this.log("Requested CurrentState: %s", this.lastState);
-    if (this.status_url2 !== undefined) {
+    if (this.status_url !== undefined) {
     	this.log("Status_URL: %s", this.status_url);
-    	this.httpRequest(this.status_url, this.httpMethod, function(error,response,data) {
-    		if (error)	{
-        		this.log("Error reading status: %s", error.message);
-        	} else {
-        		this.log("Data returned is: %s", data);
-       		}
-    	});
+    	request.get({
+    		url: this.status_url,
+  			}, function(error, response, body) {
+  			if (!error && response.statusCode == 200) {
+    			if (body !== undefined) {
+    				if (!isNaN(parseFloat(body)) && isFinite(body)) {
+	    				this.log("Got Status %s",body);
+	    			    this.lastState = body;	
+	    			} else {
+	    				this.log("Warning, status returned isn't numeric: %s",body);
+	    			}
+    			} else {
+    				this.log("Warning, data returned isn't defined");
+    			}  				
+  			}
+    	}.bind(this));
     }
     callback(null, this.lastState);
     
 }
 
 HttpMulti.prototype.getCurrentUnits = function(callback) {
-    this.log("Requested CurrentPosition: %s", this.lastPosition);
+    this.log("Requested CurrentUnits: %s", this.units);
     callback(null, this.units);
 }
 
 HttpMulti.prototype.getCurrentTemp = function(callback) {
-    this.log("Requested CurrentPosition: %s", this.lastPosition);
+    this.log("Requested CurrentTemp: %s", this.lastTemp);
     callback(null, this.lastTemp);
 }
 
