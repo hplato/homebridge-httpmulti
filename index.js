@@ -93,6 +93,7 @@ function HttpMulti(log, config) {
     	this.currentState = 0;  
     	this.TargetState = 0;
     	this.lastUpdate = Date.now();
+    	this.partial = 0;
 
     // register the service and provide the functions
     this.service = new Service.Lightbulb(this.name);
@@ -113,6 +114,7 @@ function HttpMulti(log, config) {
      	this.lastState = 0; 
     	this.currentState = 0;  
     	this.TargetState = 0;
+    	this.partial = 0;
 
     // register the service and provide the functions
     this.service = new Service.Fan(this.name);
@@ -247,10 +249,10 @@ HttpMulti.prototype.getCurrentPosition = function(callback) {
 HttpMulti.prototype.getCurrentState = function(callback) {
     this.log("Requested CurrentState: %s", this.lastState);
     if (this.status_url !== undefined) {
-    	this.log("Status_URL: %s", this.status_url);
     	request.get({
     		url: this.status_url,
   			}, function(error, response, body) {
+  			this.log("Status_URL: %s", this.status_url);
   			if (!error && response.statusCode == 200) {
     			if (body !== undefined) {
     				if (!isNaN(parseFloat(body)) && isFinite(body)) {
@@ -315,16 +317,16 @@ HttpMulti.prototype.setTargetPosition = function(pos, callback) {
 HttpMulti.prototype.setTargetDoorPosition = function(pos, callback) {
     this.log("Set TargetDoorPosition: %s", pos);
     this.currentTargetPosition = pos;
-    const moveUp = (this.currentTargetPosition >= this.lastPosition);
-    this.log((moveUp ? "Moving up" : "Moving down"));
+    //const moveUp = (this.currentTargetPosition >= this.lastPosition);
+    this.log((pos ? "Moving down" : "Moving up"));
         
 	this.log("up="+this.up_url+" down="+this.down_url+" method="+this.httpMethod);
-    this.httpRequest((moveUp ? this.up_url : this.down_url), this.httpMethod, function() {
-        this.log("Success moving %s", (moveUp ? "up (to 100)" : "down (to 0)"));
+    this.httpRequest((pos ? this.down_url : this.up_url), this.httpMethod, function() {
+        this.log("Success moving %s", (pos ? "down (to 0)" : "up (to 1)"));
         this.service
         	.setCharacteristic(Characteristic.CurrentDoorState, pos);
-        this.lastPosition = (moveUp ? 100 : 0);
-		this.lastState = (moveUp ? 1 : 0 );
+        this.lastPosition = pos;
+		this.lastState = pos; //(pos ? 0 : 1 );
         callback(null);
     }.bind(this));
 }
@@ -333,15 +335,17 @@ HttpMulti.prototype.setCurrentState = function(value, callback) {
     this.log("Set CurrentState: %s", value);
     this.currentTargetState = value;
     this.log((value ? "Turning On" : "Turning Off"));
-	if (value == 1 && this.lastState > 1) {
+	if (this.partial == 1) {
 		//It's a dim operation, so don't turn the light on
-		this.log("Ignoring on since light is dim?");
+		this.log("Ignoring on since device is partially on");
+		this.partial = 0;
 		callback(null);
 	} else {
 		this.log("on="+this.on_url+" off="+this.off_url+" method="+this.httpMethod);
     	this.httpRequest((value ? this.on_url : this.off_url), this.httpMethod, function() {
         	this.log("Success turning %s", (value ? "on" : "off"))
         	this.lastState = value;
+        	this.partial = 0;
         	callback(null);
     	}.bind(this));
     }
@@ -374,6 +378,8 @@ HttpMulti.prototype.setCurrentThermoState = function(value, callback) {
 HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
     this.log("Set Partial State: %s", value);
     this.currentTargetState = value;
+           	this.partial = 1; 	
+
 //	if (this.lastUpdate > (Date.now() + 1000)) {
 	    var myURL = this.brightness_url;
 	    if (myURL === undefined) {
@@ -386,6 +392,7 @@ HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
     	this.httpRequest(myURL, this.httpMethod, function() {
         	this.log("Success turning %s", (value))
         	this.lastState = value;
+        	this.partial = 0;
         	callback(null);
     	}.bind(this));
     	this.lastUpdate = Date.now();
