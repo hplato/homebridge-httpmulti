@@ -1,5 +1,8 @@
 //thanks to zwerch (https://github.com/zwerch) for the blinds model as the basis for this accessory
 
+//todo: add in the models & serial #s
+//      clean up and refactor the get status
+
 var request = require("request");
 var Service, Characteristic;
 
@@ -56,6 +59,7 @@ function HttpMulti(log, config) {
   	this.log("HttpMulti Blind Object Initializing...");
   	    // state vars
     this.lastPosition = 0; // last known position of the blinds, down by default
+    this.lastStatePartial = 0;
     this.currentPositionState = 2; // stopped by default
     this.currentTargetPosition = 0; // down by default
 
@@ -66,7 +70,7 @@ function HttpMulti(log, config) {
     // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L493
     this.service
         .getCharacteristic(Characteristic.CurrentPosition)
-        .on('get', this.getCurrentPosition.bind(this));
+        .on('get', this.getCurrentStatePartial.bind(this));
 
     // the position state
     // 0 = DECREASING; 1 = INCREASING; 2 = STOPPED;
@@ -79,7 +83,7 @@ function HttpMulti(log, config) {
     // https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/gen/HomeKitTypes.js#L1564
     this.service
         .getCharacteristic(Characteristic.TargetPosition)
-        .on('get', this.getTargetPosition.bind(this))
+        .on('get', this.getCurrentStatePartial.bind(this))
         .on('set', this.setTargetPosition.bind(this));
         
         
@@ -130,68 +134,73 @@ function HttpMulti(log, config) {
 
 
     } else if (this.deviceType.match(/^switch/i)) {
-  	this.log("HttpMulti Switch Object Initializing...");
+  		this.log("HttpMulti Switch Object Initializing...");
 
      	this.lastState = 0; 
     	this.currentState = 0;  
     	this.TargetState = 0;
 
     // register the service and provide the functions
-    this.service = new Service.Switch(this.name);
+    	this.service = new Service.Switch(this.name);
 
-    this.service
-        .getCharacteristic(Characteristic.On)
-        .on('get', this.getCurrentState.bind(this))
-        .on('set', this.setCurrentState.bind(this));
+    	this.service
+        	.getCharacteristic(Characteristic.On)
+        	.on('get', this.getCurrentState.bind(this))
+        	.on('set', this.setCurrentState.bind(this));
 
 
     } else if (this.deviceType.match(/^garagedoor/i)) {
-  	this.log("HttpMulti Garage door Object Initializing...");
+  		this.log("HttpMulti Garage door Object Initializing...");
 
  	    // state vars
-    this.lastPosition = 0; 
-    this.currentPositionState = 0; 
-    this.currentTargetPosition = 0; 
-    this.lastObstructed = false;
+//		this.lastPosition = 0; 	    
+    	this.lastState = 0; 
+    	this.currentPositionState = 0; 
+    	this.currentTargetPosition = 0; 
+    	this.lastObstructed = false;
 
-    // register the service and provide the functions
-    this.service = new Service.GarageDoorOpener(this.name);
+    	// register the service and provide the functions
+    	this.service = new Service.GarageDoorOpener(this.name);
 
-   this.service
-        .getCharacteristic(Characteristic.CurrentDoorState)
-        .on('get', this.getCurrentPosition.bind(this))
+		// 0 - OPEN, 1 - CLOSED, 2 - OPENING, 3 - CLOSING, 4 - STOPPED
+   		this.service
+        	.getCharacteristic(Characteristic.CurrentDoorState)
+//        	.on('get', this.getCurrentPosition.bind(this))
+        	.on('get', this.getCurrentState.bind(this))
+
         
+		//0 - OPEN, 1 - CLOSED
+    	this.service
+        	.getCharacteristic(Characteristic.TargetDoorState)
+        	.on('get', this.getTargetPosition.bind(this))
+        	.on('set', this.setTargetDoorPosition.bind(this));
 
-    this.service
-        .getCharacteristic(Characteristic.TargetDoorState)
-        .on('get', this.getTargetPosition.bind(this))
-        .on('set', this.setTargetDoorPosition.bind(this));
-
-    this.service
-        .getCharacteristic(Characteristic.ObstructionDetected)
-        .on('get', this.getObstructed.bind(this));
+    	this.service
+        	.getCharacteristic(Characteristic.ObstructionDetected)
+        	.on('get', this.getObstructed.bind(this));
 
 
     } else if (this.deviceType.match(/^lock/i)) {
-  	this.log("HttpMulti Lock Object Initializing...");
+  		this.log("HttpMulti Lock Object Initializing...");
 
      	this.lastState = 0; 
     	this.currentState = 0;  
     	this.TargetState = 0;
 
-    // register the service and provide the functions
-    this.service = new Service.LockMechanism(this.name);
+    	// register the service and provide the functions
+    	this.service = new Service.LockMechanism(this.name);
 
-    this.service
-        .getCharacteristic(Characteristic.LockCurrentState)
-        .on('get', this.getCurrentState.bind(this));
+    	this.service
+        	.getCharacteristic(Characteristic.LockCurrentState)
+        	.on('get', this.getCurrentState.bind(this));
 
-    this.service
-        .getCharacteristic(Characteristic.LockTargetState)
-        .on('get', this.getCurrentState.bind(this))
-        .on('set', this.setCurrentLockState.bind(this));
+    	this.service
+        	.getCharacteristic(Characteristic.LockTargetState)
+        	.on('get', this.getCurrentState.bind(this))
+        	.on('set', this.setCurrentLockState.bind(this));
 
     } else if (this.deviceType.match(/^thermostat/i)) {
+  		this.log("HttpMulti Thermostat Object Initializing...");
 
      	this.lastState = 0; // 0 OFF, 1 HEAT, 2 COOL
     	this.currentState = 0;  
@@ -202,30 +211,30 @@ function HttpMulti(log, config) {
      	this.units = 0; // 0 Celcius, 1 Fahrenheit 
      	if (this.unit_type !== "C") this.units = 1;
 
-   this.service = new Service.Thermostat(this.name);
+   		this.service = new Service.Thermostat(this.name);
 
-    this.service
-        .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-        .on('get', this.getCurrentState.bind(this));
+    	this.service
+       		.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+        	.on('get', this.getCurrentState.bind(this));
 
-   this.service
-        .getCharacteristic(Characteristic.TargetHeatingCoolingState)
-        .on('get', this.getCurrentStatePartial.bind(this))
-        .on('set', this.setCurrentThermoState.bind(this));
+   		this.service
+        	.getCharacteristic(Characteristic.TargetHeatingCoolingState)
+        	.on('get', this.getCurrentStatePartial.bind(this))
+        	.on('set', this.setCurrentThermoState.bind(this));
 
-   this.service
-        .getCharacteristic(Characteristic.CurrentTemperature)
-        .on('get', this.getCurrentTemp.bind(this));
+   		this.service
+        	.getCharacteristic(Characteristic.CurrentTemperature)
+        	.on('get', this.getCurrentTemp.bind(this));
 
-   this.service
-        .getCharacteristic(Characteristic.TargetTemperature)
-        .on('get', this.getCurrentTemp.bind(this))
-        .on('set', this.setCurrentStatePartial.bind(this));
+   		this.service
+        	.getCharacteristic(Characteristic.TargetTemperature)
+        	.on('get', this.getCurrentTemp.bind(this))
+        	.on('set', this.setCurrentStatePartial.bind(this));
 
 
-   this.service
-        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
-        .on('get', this.getCurrentUnits.bind(this))
+   		this.service
+        	.getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        	.on('get', this.getCurrentUnits.bind(this))
 
    
 	} else {
@@ -241,7 +250,7 @@ HttpMulti.prototype.getObstructed = function(callback) {
 
 HttpMulti.prototype.getCurrentPosition = function(callback) {
     this.log("Requested CurrentPosition: %s", this.lastPosition);
-    callback(null, this.lastPosition);
+    callback(null, this.lastState);
 }
 
 HttpMulti.prototype.getCurrentState = function(callback) {
@@ -254,8 +263,9 @@ HttpMulti.prototype.getCurrentState = function(callback) {
   			if (!error && response.statusCode == 200) {
     			if (body !== undefined) {
     				if (!isNaN(parseFloat(body)) && isFinite(body)) {
-	    				this.log("Got Status %s",body);
 	    			    this.lastState = (parseInt(body) > 0);	
+	    				this.log("Got Status %s",this.lastState);
+
 	    			} else {
 	    				this.log("Warning, status returned isn't numeric: %s",body);
 	    			}
@@ -281,8 +291,8 @@ HttpMulti.prototype.getCurrentStatePartial = function(callback) {
   			if (!error && response.statusCode == 200) {
     			if (body !== undefined) {
     				if (!isNaN(parseFloat(body)) && isFinite(body)) {
-	    				this.log("Got Status %s",body);
 	    			    this.lastStatePartial = parseInt(body);	
+	    				this.log("Got Status %s",this.lastStatePartial);
 	    			} else {
 	    				this.log("Warning, status returned isn't numeric: %s",body);
 	    			}
@@ -313,8 +323,9 @@ HttpMulti.prototype.getCurrentTemp = function(callback) {
   			if (!error && response.statusCode == 200) {
     			if (body !== undefined) {
     				if (!isNaN(parseFloat(body)) && isFinite(body)) {
-	    				this.log("Got Status %s",body);
-	    			    this.lastTemp = body;	
+	    			    this.lastTemp = parseInt(body);	
+	    				this.log("Got Temp %s",this.lastTemp);
+
 	    			} else {
 	    				this.log("Warning, status returned isn't numeric: %s",body);
 	    			}
@@ -329,25 +340,6 @@ HttpMulti.prototype.getCurrentTemp = function(callback) {
 
 HttpMulti.prototype.getPositionState = function(callback) {
     this.log("Requested PositionState: %s", this.currentPositionState);
-    if (this.status_url !== undefined) {
-    	request.get({
-    		url: this.status_url,
-  			}, function(error, response, body) {
-  			this.log("Status_URL: %s", this.status_url);
-  			if (!error && response.statusCode == 200) {
-    			if (body !== undefined) {
-    				if (!isNaN(parseFloat(body)) && isFinite(body)) {
-	    				this.log("Got Status %s",body);
-	    			    this.currentPositionState = body;	
-	    			} else {
-	    				this.log("Warning, status returned isn't numeric: %s",body);
-	    			}
-    			} else {
-    				this.log("Warning, data returned isn't defined");
-    			}  				
-  			}
-    	}.bind(this));
-    }
     callback(null, this.currentPositionState);
 }
 
@@ -360,7 +352,7 @@ HttpMulti.prototype.getTargetPosition = function(callback) {
 HttpMulti.prototype.setTargetPosition = function(pos, callback) {
     this.log("Set TargetPosition: %s", pos);
     this.currentTargetPosition = pos;
-    const moveUp = (this.currentTargetPosition >= this.lastPosition);
+    const moveUp = (this.currentTargetPosition >= this.lastStatePartial);
     this.log((moveUp ? "Moving up" : "Moving down"));
 
     this.service
@@ -390,7 +382,6 @@ HttpMulti.prototype.setTargetDoorPosition = function(pos, callback) {
         this.log("Success moving %s", (pos ? "down (to 0)" : "up (to 1)"));
         this.service
         	.setCharacteristic(Characteristic.CurrentDoorState, pos);
-        this.lastPosition = pos;
 		this.lastState = pos; //(pos ? 0 : 1 );
         callback(null);
     }.bind(this));
