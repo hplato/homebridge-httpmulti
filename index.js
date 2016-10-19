@@ -172,7 +172,7 @@ function HttpMulti(log, config) {
 		//0 - OPEN, 1 - CLOSED
     	this.service
         	.getCharacteristic(Characteristic.TargetDoorState)
-        	.on('get', this.getTargetPosition.bind(this))
+        	.on('get', this.getCurrentState.bind(this))
         	.on('set', this.setTargetDoorPosition.bind(this));
 
     	this.service
@@ -205,9 +205,8 @@ function HttpMulti(log, config) {
      	this.lastState = 0; // 0 OFF, 1 HEAT, 2 COOL
     	this.currentState = 0;  
     	this.TargetState = 0;
-     	this.lastTemp = 15;
-     	this.currentTemp = 15;
-     	this.TargetTemp = 15;
+     	//this.lastTemp = ;
+     	//this.TargetTemp = 15;
      	this.units = 0; // 0 Celcius, 1 Fahrenheit 
      	if (this.unit_type !== "C") this.units = 1;
 
@@ -215,7 +214,7 @@ function HttpMulti(log, config) {
 
     	this.service
        		.getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-        	.on('get', this.getCurrentState.bind(this));
+        	.on('get', this.getCurrentStatePartial.bind(this));
 
    		this.service
         	.getCharacteristic(Characteristic.TargetHeatingCoolingState)
@@ -229,7 +228,7 @@ function HttpMulti(log, config) {
    		this.service
         	.getCharacteristic(Characteristic.TargetTemperature)
         	.on('get', this.getCurrentTemp.bind(this))
-        	.on('set', this.setCurrentStatePartial.bind(this));
+        	.on('set', this.setCurrentTemp.bind(this));
 
 
    		this.service
@@ -325,7 +324,7 @@ HttpMulti.prototype.getCurrentTemp = function(callback) {
     				if (!isNaN(parseFloat(body)) && isFinite(body)) {
 	    			    this.lastTemp = parseInt(body);	
 	    				this.log("Got Temp %s",this.lastTemp);
-
+    					callback(null, this.lastTemp);
 	    			} else {
 	    				this.log("Warning, status returned isn't numeric: %s",body);
 	    			}
@@ -334,8 +333,9 @@ HttpMulti.prototype.getCurrentTemp = function(callback) {
     			}  				
   			}
     	}.bind(this));
+    } else {
+    	callback(null, this.lastTemp);
     }
-    callback(null, this.lastTemp);
 }
 
 HttpMulti.prototype.getPositionState = function(callback) {
@@ -351,8 +351,9 @@ HttpMulti.prototype.getTargetPosition = function(callback) {
 
 HttpMulti.prototype.setTargetPosition = function(pos, callback) {
     this.log("Set TargetPosition: %s", pos);
+    // 0 down, >0 up.
     this.currentTargetPosition = pos;
-    const moveUp = (this.currentTargetPosition >= this.lastStatePartial);
+    const moveUp = (pos > 0);
     this.log((moveUp ? "Moving up" : "Moving down"));
 
     this.service
@@ -408,7 +409,7 @@ HttpMulti.prototype.setCurrentState = function(value, callback) {
 }
 
 HttpMulti.prototype.setCurrentThermoState = function(value, callback) {
-    this.log("Set CurrentState: %s", value);
+    this.log("Set CurrentThermoState: %s", value);
     this.currentTargetState = value;
 	var myURL = this.mode_url;
 	myURL = myURL.replace("%VALUE%",value);
@@ -428,6 +429,20 @@ HttpMulti.prototype.setCurrentThermoState = function(value, callback) {
         	callback(null);
     	}.bind(this));
 }
+
+HttpMulti.prototype.setCurrentTemp = function(value, callback) {
+    this.log("Set Current Temp: %s", value);
+    this.lastTemp = value;
+	var myURL = this.mode_url;
+	myURL = myURL.replace("%VALUE%",value);
+
+    this.httpRequest(myURL, this.httpMethod, function() {
+        this.log("Success setting temp %s", value)
+        this.lastTemp = value;
+        	callback(null);
+    	}.bind(this));
+}
+
 
 HttpMulti.prototype.setCurrentStatePartial = function(value, callback) {
     this.log("Set Partial State: %s", value);
