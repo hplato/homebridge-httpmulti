@@ -36,6 +36,7 @@ function HttpMulti(log, config) {
   this.name = config["name"];
   this.deviceType = config["deviceType"];
   this.method = config["http_method"];
+  this.httpMethod = config["http_method"];
   if (this.method === undefined) this.method = "GET";
   
 //TODO add this to ServiceInformation  
